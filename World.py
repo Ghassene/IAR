@@ -6,7 +6,7 @@ triangle_size = 0.1
 cell_score_min = -0.2
 cell_score_max = 0.2
 Width = 100
-(x, y) = (12, 18)
+(x, y) = (18, 12)
 actions = ["up", "down", "left", "right"]
 
 board = Canvas(master, width=x*Width, height=y*Width)
@@ -15,8 +15,10 @@ score = 1
 restart = False
 walk_reward = -0.04
 
-walls = [(2, 1), (2, 2),(2, 3),(5, 4),(7, 0),(7, 1),(7, 2)]
-specials = [(8, 1, "red", -1), (8, 0, "green", 1)]
+walls = [(4, 2), (4, 3), (4, 4), (4, 5), (4, 6), (4, 7), (5, 2), (5, 3), (5, 4), (5, 5), (5, 6), (5, 7),
+                      (10, 8), (10, 9), (11, 8), (11, 9), (14, 2), (14, 3), (14, 4), (14, 5), (14, 0), (14, 1), (15, 2),
+                      (15, 3), (15, 4), (15, 5), (15, 0), (15, 1)]
+specials = [(16, 0, "green", 100), (16, 1, "green", 100),(17, 0, "green", 100), (17, 1, "green", 100)]
 cell_scores = {}
 
 

@@ -63,13 +63,13 @@ class Maze:
         self.actions = [self.ACTION_UP, self.ACTION_DOWN, self.ACTION_LEFT, self.ACTION_RIGHT]
 
         # start state
-        self.START_STATE = [0, 4]
+        self.START_STATE = [2, 0]
 
         # goal state
-        self.GOAL_STATES = [[16, 0],[16,1],[17, 0],[17, 1]]
+        self.GOAL_STATES = [[0, 8]]
 
         # all obstacles
-        self.obstacles = [[4, 2], [4, 3],[4, 4], [4, 5],[4, 6], [4, 7],[5, 2], [5, 3],[5, 4], [5, 5],[5, 6], [5, 7], [10, 8], [10, 9], [11, 8], [11, 9], [14, 2], [14, 3],[14, 4], [14, 5],[14, 0], [14, 1],[15, 2], [15, 3],[15, 4], [15, 5],[15, 0], [15, 1]]
+        self.obstacles = [[1, 2], [2, 2], [3, 2], [0, 7], [1, 7], [2, 7], [4, 5]]
         self.old_obstacles = None
         self.new_obstacles = None
 
@@ -141,16 +141,16 @@ class DynaParams:
         self.gamma = 0.95
 
         # probability for exploration
-        self.epsilon = 0.0001
+        self.epsilon = 0.1
 
         # step size
-        self.alpha = 0.5
+        self.alpha = 0.1
 
         # weight for elapsed time
         self.time_weight = 0
 
         # n-step planning
-        self.planning_steps = 5
+        self.planning_steps = 50
 
         # average over several independent runs
         self.runs = 10
@@ -159,7 +159,7 @@ class DynaParams:
         self.methods = ['Dyna-Q', 'Dyna-Q+']
 
         # threshold for priority queue
-        self.theta = 0
+        self.theta = 0.0001
 
 
 # choose an action based on epsilon-greedy algorithm
@@ -317,13 +317,13 @@ def dyna_q(q_value, model, maze, dyna_params):
 
         # sample experience from the model
         for t in range(0, dyna_params.planning_steps):
+
             state_, action_, next_state_, reward_ = model.sample()
             q_value[state_[0], state_[1], action_] += \
                 dyna_params.alpha * (reward_ + dyna_params.gamma * np.max(q_value[next_state_[0], next_state_[1], :]) -
                                      q_value[state_[0], state_[1], action_])
 
         state = next_state
-
         # check whether it has exceeded the step limit
         if steps > maze.max_steps:
             break
@@ -401,19 +401,17 @@ def figure_8_2():
 
     runs = 10
     episodes = 50
-    planning_steps = [0, 5, 50]
+    planning_steps = [50]
     steps = np.zeros((len(planning_steps), episodes))
 
     for run in tqdm(range(runs)):
         for index, planning_step in zip(range(len(planning_steps)), planning_steps):
-            print("ici")
             dyna_params.planning_steps = planning_step
             q_value = np.zeros(dyna_maze.q_size)
-
             # generate an instance of Dyna-Q model
             model = TrivialModel()
             for ep in range(episodes):
-                # print('run:', run, 'planning step:', planning_step, 'episode:', ep)
+                print('run:', run, 'planning step:', planning_step, 'episode:', ep)
                 steps[index, ep] += dyna_q(q_value, model, dyna_maze, dyna_params)
 
     # averaging over runs
@@ -470,21 +468,31 @@ def changing_maze(maze, dyna_params):
     # averaging over runs
     rewards = rewards.mean(axis=0)
 
-    return rewards
+    return rewards,steps
 
 # Figure 8.4, BlockingMaze
 def figure_8_4():
     # set up a blocking maze instance
     blocking_maze = Maze()
-    blocking_maze.START_STATE = [5, 3]
-    blocking_maze.GOAL_STATES = [[0, 8]]
+    blocking_maze.START_STATE = [0, 4]
+
+    # goal state
+    blocking_maze.GOAL_STATES = [[16, 0], [16, 1], [17, 0], [17, 1]]
+
+    # all obstacles
+    blocking_maze.new_obstacles = [[4, 2], [4, 3], [4, 4], [4, 5], [4, 6], [4, 7], [5, 2], [5, 3], [5, 4], [5, 5], [5, 6], [5, 7],
+                      [10, 8], [10, 9], [11, 8], [11, 9], [14, 2], [14, 3], [14, 4], [14, 5], [14, 0], [14, 1], [15, 2],
+                      [15, 3], [15, 4], [15, 5], [15, 0], [15, 1]]
+
+    #blocking_maze.START_STATE = [5, 3]
+    #blocking_maze.GOAL_STATES = [[0, 8]]
     blocking_maze.old_obstacles = [[3, i] for i in range(0, 8)]
 
     # new obstalces will block the optimal path
-    blocking_maze.new_obstacles = [[3, i] for i in range(1, 9)]
+    #blocking_maze.new_obstacles = [[3, i] for i in range(1, 9)]
 
     # step limit
-    blocking_maze.max_steps = 3000
+    blocking_maze.max_steps = 10000
 
     # obstacles will change after 1000 steps
     # the exact step for changing will be different
@@ -494,15 +502,26 @@ def figure_8_4():
 
     # set up parameters
     dyna_params = DynaParams()
-    dyna_params.alpha = 1.0
-    dyna_params.planning_steps = 10
-    dyna_params.runs = 20
+    dyna_params.alpha = 0.50
+    dyna_params.planning_steps = 100
+    dyna_params.runs = 10
 
     # kappa must be small, as the reward for getting the goal is only 1
     dyna_params.time_weight = 1e-4
 
     # play
-    rewards = changing_maze(blocking_maze, dyna_params)
+    rewards,steps = changing_maze(blocking_maze, dyna_params)
+
+    steps /= dyna_params.runs
+
+    for i in range(len(steps)):
+        plt.plot(steps[i, :], label='%d planning steps' % (steps[i]))
+    plt.xlabel('episodes')
+    plt.ylabel('steps per episode')
+    plt.legend()
+
+    plt.savefig('figure_8_2.png')
+    plt.close()
 
     for i in range(len(dyna_params.methods)):
         plt.plot(rewards[i, :], label=dyna_params.methods[i])
@@ -647,11 +666,12 @@ def example_8_4():
     plt.yscale('log')
     plt.legend()
 
+
     plt.savefig('example_8_4.png')
     plt.close()
 
 if __name__ == '__main__':
     figure_8_2()
-    #figure_8_4()
+    figure_8_4()
     #figure_8_5()
     #example_8_4()

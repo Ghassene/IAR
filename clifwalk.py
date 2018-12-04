@@ -90,6 +90,7 @@ def q_learning(q_value, step_size=ALPHA):
     state = START
     rewards = 0.0
     while state != GOAL:
+        print(state)
         action = choose_action(state, q_value)
         next_state, reward = step(state, action)
         rewards += reward
@@ -133,14 +134,13 @@ def figure_6_4():
     runs = 50
 
     rewards_q_learning = np.zeros(episodes)
-    for r in tqdm(range(runs)):
+    for r in range(runs):
         q_q_learning =np.zeros((WORLD_HEIGHT, WORLD_WIDTH, 4))
         for i in range(0, episodes):
             # cut off the value by -100 to draw the figure more elegantly
             # rewards_sarsa[i] += max(sarsa(q_sarsa), -100)
             # rewards_q_learning[i] += max(q_learning(q_q_learning), -100)
             rewards_q_learning[i] += q_learning(q_q_learning)
-
     # averaging over independt runs
     rewards_q_learning /= runs
 
