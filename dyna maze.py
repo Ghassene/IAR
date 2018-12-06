@@ -50,10 +50,10 @@ class PriorityQueue:
 class Maze:
     def __init__(self):
         # maze width
-        self.WORLD_WIDTH = 18
+        self.WORLD_WIDTH = 12
 
         # maze height
-        self.WORLD_HEIGHT = 12
+        self.WORLD_HEIGHT = 18
 
         # all possible actions
         self.ACTION_UP = 0
@@ -63,18 +63,22 @@ class Maze:
         self.actions = [self.ACTION_UP, self.ACTION_DOWN, self.ACTION_LEFT, self.ACTION_RIGHT]
 
         # start state
-        self.START_STATE = [2, 0]
+        self.START_STATE = [0, 4]
 
         # goal state
-        self.GOAL_STATES = [[0, 8]]
+        self.GOAL_STATES = [[16, 0], [16, 1], [17, 0], [17, 1]]
 
         # all obstacles
-        self.obstacles = [[1, 2], [2, 2], [3, 2], [0, 7], [1, 7], [2, 7], [4, 5]]
+        self.obstacles = [[4, 2], [4, 3], [4, 4], [4, 5], [4, 6], [4, 7], [5, 2], [5, 3], [5, 4], [5, 5], [5, 6],
+                          [5, 7], [10, 8], [10, 9], [11, 8], [11, 9], [14, 2], [14, 3], [14, 4], [14, 5], [14, 0],
+                          [14, 1], [15, 2], [15, 3], [15, 4], [15, 5], [15, 0], [15, 1]]
+
         self.old_obstacles = None
         self.new_obstacles = None
 
         # time to change obstacles
         self.obstacle_switch_time = None
+
         # initial state action pair values
         # self.stateActionValues = np.zeros((self.WORLD_HEIGHT, self.WORLD_WIDTH, len(self.actions)))
 
@@ -150,7 +154,7 @@ class DynaParams:
         self.time_weight = 0
 
         # n-step planning
-        self.planning_steps = 50
+        self.planning_steps = 5
 
         # average over several independent runs
         self.runs = 10
@@ -159,7 +163,7 @@ class DynaParams:
         self.methods = ['Dyna-Q', 'Dyna-Q+']
 
         # threshold for priority queue
-        self.theta = 0.0001
+        self.theta = 0
 
 
 # choose an action based on epsilon-greedy algorithm
@@ -317,13 +321,12 @@ def dyna_q(q_value, model, maze, dyna_params):
 
         # sample experience from the model
         for t in range(0, dyna_params.planning_steps):
-
             state_, action_, next_state_, reward_ = model.sample()
             q_value[state_[0], state_[1], action_] += \
                 dyna_params.alpha * (reward_ + dyna_params.gamma * np.max(q_value[next_state_[0], next_state_[1], :]) -
                                      q_value[state_[0], state_[1], action_])
-
         state = next_state
+
         # check whether it has exceeded the step limit
         if steps > maze.max_steps:
             break
@@ -401,17 +404,18 @@ def figure_8_2():
 
     runs = 10
     episodes = 50
-    planning_steps = [50]
+    planning_steps = [0, 5, 50]
     steps = np.zeros((len(planning_steps), episodes))
 
     for run in tqdm(range(runs)):
         for index, planning_step in zip(range(len(planning_steps)), planning_steps):
             dyna_params.planning_steps = planning_step
             q_value = np.zeros(dyna_maze.q_size)
+
             # generate an instance of Dyna-Q model
             model = TrivialModel()
             for ep in range(episodes):
-                print('run:', run, 'planning step:', planning_step, 'episode:', ep)
+                # print('run:', run, 'planning step:', planning_step, 'episode:', ep)
                 steps[index, ep] += dyna_q(q_value, model, dyna_maze, dyna_params)
 
     # averaging over runs
@@ -468,31 +472,23 @@ def changing_maze(maze, dyna_params):
     # averaging over runs
     rewards = rewards.mean(axis=0)
 
-    return rewards,steps
+    return rewards
 
 # Figure 8.4, BlockingMaze
 def figure_8_4():
     # set up a blocking maze instance
     blocking_maze = Maze()
+    blocking_maze.WORLD_HEIGHT = 12
+    blocking_maze.WORLD_WIDTH = 18
     blocking_maze.START_STATE = [0, 4]
-
-    # goal state
-    blocking_maze.GOAL_STATES = [[16, 0], [16, 1], [17, 0], [17, 1]]
-
-    # all obstacles
-    blocking_maze.new_obstacles = [[4, 2], [4, 3], [4, 4], [4, 5], [4, 6], [4, 7], [5, 2], [5, 3], [5, 4], [5, 5], [5, 6], [5, 7],
-                      [10, 8], [10, 9], [11, 8], [11, 9], [14, 2], [14, 3], [14, 4], [14, 5], [14, 0], [14, 1], [15, 2],
-                      [15, 3], [15, 4], [15, 5], [15, 0], [15, 1]]
-
-    #blocking_maze.START_STATE = [5, 3]
-    #blocking_maze.GOAL_STATES = [[0, 8]]
+    blocking_maze.GOAL_STATES = [[16, 0],[16, 1],[17, 0],[17, 1]]
     blocking_maze.old_obstacles = [[3, i] for i in range(0, 8)]
 
     # new obstalces will block the optimal path
-    #blocking_maze.new_obstacles = [[3, i] for i in range(1, 9)]
+    blocking_maze.new_obstacles = [[3, i] for i in range(1, 9)]
 
     # step limit
-    blocking_maze.max_steps = 10000
+    blocking_maze.max_steps = 3000
 
     # obstacles will change after 1000 steps
     # the exact step for changing will be different
@@ -502,26 +498,15 @@ def figure_8_4():
 
     # set up parameters
     dyna_params = DynaParams()
-    dyna_params.alpha = 0.50
-    dyna_params.planning_steps = 100
-    dyna_params.runs = 10
+    dyna_params.alpha = 1.0
+    dyna_params.planning_steps = 10
+    dyna_params.runs = 20
 
     # kappa must be small, as the reward for getting the goal is only 1
     dyna_params.time_weight = 1e-4
 
     # play
-    rewards,steps = changing_maze(blocking_maze, dyna_params)
-
-    steps /= dyna_params.runs
-
-    for i in range(len(steps)):
-        plt.plot(steps[i, :], label='%d planning steps' % (steps[i]))
-    plt.xlabel('episodes')
-    plt.ylabel('steps per episode')
-    plt.legend()
-
-    plt.savefig('figure_8_2.png')
-    plt.close()
+    rewards = changing_maze(blocking_maze, dyna_params)
 
     for i in range(len(dyna_params.methods)):
         plt.plot(rewards[i, :], label=dyna_params.methods[i])
@@ -614,7 +599,7 @@ def example_8_4():
 
     # due to limitation of my machine, I can only perform experiments for 5 mazes
     # assuming the 1st maze has w * h states, then k-th maze has w * h * k * k states
-    num_of_mazes = 5
+    num_of_mazes = 1
 
     # build all the mazes
     mazes = [original_maze.extend_maze(i) for i in range(1, num_of_mazes + 1)]
@@ -646,7 +631,7 @@ def example_8_4():
 
                     # print best actions w.r.t. current state-action values
                     # printActions(currentStateActionValues, maze)
-
+                    print("steps",steps[-1])
                     # check whether the (relaxed) optimal path is found
                     if check_path(q_value, maze):
                         break
@@ -666,12 +651,13 @@ def example_8_4():
     plt.yscale('log')
     plt.legend()
 
-
-    plt.savefig('example_8_4.png')
+    plt.savefig('../images/example_8_4.png')
     plt.close()
 
+
 if __name__ == '__main__':
-    figure_8_2()
-    figure_8_4()
+    #figure_8_2()
+    #figure_8_4()
     #figure_8_5()
-    #example_8_4()
+    example_8_4()
+
