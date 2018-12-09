@@ -8,11 +8,13 @@
 
 import numpy as np
 import matplotlib
-matplotlib.use('Agg')
+#matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import heapq
 from copy import deepcopy
+from scipy.spatial import distance
+
 
 class PriorityQueue:
     def __init__(self):
@@ -50,10 +52,10 @@ class PriorityQueue:
 class Maze:
     def __init__(self):
         # maze width
-        self.WORLD_WIDTH = 12
+        self.WORLD_WIDTH = 9
 
         # maze height
-        self.WORLD_HEIGHT = 18
+        self.WORLD_HEIGHT = 6
 
         # all possible actions
         self.ACTION_UP = 0
@@ -63,15 +65,13 @@ class Maze:
         self.actions = [self.ACTION_UP, self.ACTION_DOWN, self.ACTION_LEFT, self.ACTION_RIGHT]
 
         # start state
-        self.START_STATE = [0, 4]
+        self.START_STATE = [2, 0]
 
         # goal state
-        self.GOAL_STATES = [[16, 0], [16, 1], [17, 0], [17, 1]]
+        self.GOAL_STATES = [[0, 8]]
 
         # all obstacles
-        self.obstacles = [[4, 2], [4, 3], [4, 4], [4, 5], [4, 6], [4, 7], [5, 2], [5, 3], [5, 4], [5, 5], [5, 6],
-                          [5, 7], [10, 8], [10, 9], [11, 8], [11, 9], [14, 2], [14, 3], [14, 4], [14, 5], [14, 0],
-                          [14, 1], [15, 2], [15, 3], [15, 4], [15, 5], [15, 0], [15, 1]]
+        self.obstacles = [[1, 2], [2, 2], [3, 2], [0, 7], [1, 7], [2, 7], [4, 5]]
 
         self.old_obstacles = None
         self.new_obstacles = None
@@ -200,53 +200,28 @@ class TrivialModel:
         next_state = deepcopy(next_state)
         return list(state), action, list(next_state), reward
 
-# Time-based model for planning in Dyna-Q+
-class TimeModel:
-    # @maze: the maze instance. Indeed it's not very reasonable to give access to maze to the model.
-    # @timeWeight: also called kappa, the weight for elapsed time in sampling reward, it need to be small
-    # @rand: an instance of np.random.RandomState for sampling
-    def __init__(self, maze, time_weight=1e-4, rand=np.random):
-        self.rand = rand
-        self.model = dict()
+def H(state,action,maze):
+    next,reward = maze.step(state,action)
+    return distance.euclidean(next, maze.GOAL_STATES[0])
 
-        # track the total time
-        self.time = 0
 
-        self.time_weight = time_weight
-        self.maze = maze
 
-    # feed the model with previous experience
-    def feed(self, state, action, next_state, reward):
-        state = deepcopy(state)
-        next_state = deepcopy(next_state)
-        self.time += 1
-        if tuple(state) not in self.model.keys():
-            self.model[tuple(state)] = dict()
-
-            # Actions that had never been tried before from a state were allowed to be considered in the planning step
-            for action_ in self.maze.actions:
-                if action_ != action:
-                    # Such actions would lead back to the same state with a reward of zero
-                    # Notice that the minimum time stamp is 1 instead of 0
-                    self.model[tuple(state)][action_] = [list(state), 0, 1]
-
-        self.model[tuple(state)][action] = [list(next_state), reward, self.time]
-
-    # randomly sample from previous experience
-    def sample(self):
-        state_index = self.rand.choice(range(len(self.model.keys())))
-        state = list(self.model)[state_index]
-        action_index = self.rand.choice(range(len(self.model[state].keys())))
-        action = list(self.model[state])[action_index]
-        next_state, reward, time = self.model[state][action]
-
-        # adjust reward with elapsed time since last vist
-        reward += self.time_weight * np.sqrt(self.time - time)
-
-        state = deepcopy(state)
-        next_state = deepcopy(next_state)
-
-        return list(state), action, list(next_state), reward
+# choose an action based on heuristic algorithm
+def action_h(state, maze):
+    tableof =[]
+    maxval = 0
+    for i in maze.actions:
+        ha = H(state,i,maze)
+        if (ha >= 0):
+            if(ha > maxval):
+                maxval = ha
+                tableof.append(i)
+            elif(ha == maxval):
+                tableof.append(i)
+    if len(tableof) > 0 :
+        return np.random.choice(tableof)
+    else:
+        return np.random.choice(maze.actions)
 
 # Model containing a priority queue for Prioritized Sweeping
 class PriorityModel(TrivialModel):
@@ -312,9 +287,7 @@ def dyna_q(q_value, model, maze, dyna_params):
         next_state, reward = maze.step(state, action)
 
         # Q-Learning update
-        q_value[state[0], state[1], action] += \
-            dyna_params.alpha * (reward + dyna_params.gamma * np.max(q_value[next_state[0], next_state[1], :]) -
-                                 q_value[state[0], state[1], action])
+        q_value[state[0], state[1], action] += dyna_params.alpha * (reward + dyna_params.gamma * np.max(q_value[next_state[0], next_state[1], :]) - q_value[state[0], state[1], action])
 
         # feed the model with experience
         model.feed(state, action, next_state, reward)
@@ -325,6 +298,43 @@ def dyna_q(q_value, model, maze, dyna_params):
             q_value[state_[0], state_[1], action_] += \
                 dyna_params.alpha * (reward_ + dyna_params.gamma * np.max(q_value[next_state_[0], next_state_[1], :]) -
                                      q_value[state_[0], state_[1], action_])
+        state = next_state
+
+        # check whether it has exceeded the step limit
+        if steps > maze.max_steps:
+            break
+
+    return steps
+
+def dyna_h(q_value, model, maze, dyna_params):
+    state = maze.START_STATE
+    steps = 0
+    while state not in maze.GOAL_STATES:
+        # track the steps
+        steps += 1
+
+        # get action
+        action = choose_action(state, q_value, maze, dyna_params)
+
+        # take action
+        next_state, reward = maze.step(state, action)
+
+        # Q-Learning update
+        q_value[state[0], state[1], action] += dyna_params.alpha * (reward + dyna_params.gamma * np.max(q_value[next_state[0], next_state[1], :]) - q_value[state[0], state[1], action])
+
+        # feed the model with experience
+        model.feed(state, action, next_state, reward)
+
+        # sample experience from the model
+        for t in range(0, dyna_params.planning_steps):
+            action = action_h(state,maze)
+            if(not (not model[state][action])):
+                state_, action_, next_state_, reward_ = model.sample()
+            else:
+                model.feed(state,action,next_state,reward)
+                state_, action_, next_state_, reward_ = model.sample()
+
+            q_value[state_[0], state_[1], action_] += dyna_params.alpha * (reward_ + dyna_params.gamma * np.max(q_value[next_state_[0], next_state_[1], :]) - q_value[state_[0], state_[1], action_])
         state = next_state
 
         # check whether it has exceeded the step limit
@@ -475,17 +485,27 @@ def changing_maze(maze, dyna_params):
     return rewards
 
 # Figure 8.4, BlockingMaze
-def figure_8_4():
+def Maze_figure9():
     # set up a blocking maze instance
     blocking_maze = Maze()
-    blocking_maze.WORLD_HEIGHT = 12
-    blocking_maze.WORLD_WIDTH = 18
-    blocking_maze.START_STATE = [0, 4]
-    blocking_maze.GOAL_STATES = [[16, 0],[16, 1],[17, 0],[17, 1]]
-    blocking_maze.old_obstacles = [[3, i] for i in range(0, 8)]
+    blocking_maze.WORLD_HEIGHT = 30
+    blocking_maze.WORLD_WIDTH = 30
+    blocking_maze.START_STATE = [0, 16]
+    blocking_maze.GOAL_STATES = [[0, 28],[0, 29]]
+    blocking_maze.old_obstacles = [[1, 2], [2, 2], [3, 2], [0, 7], [1, 7], [2, 7], [4, 5]]
 
     # new obstalces will block the optimal path
-    blocking_maze.new_obstacles = [[3, i] for i in range(1, 9)]
+    blocking_maze.new_obstacles = [[3, 2],[3, 3],[4, 2],
+                                   [11,5],[12,5],[13,5],[16,27]]
+    blocking_maze.new_obstacles.extend([25,i] for i in np.arange(17))
+    blocking_maze.new_obstacles.extend([26, i] for i in np.arange(17))
+    blocking_maze.new_obstacles.extend([27, i] for i in np.arange(17))
+    blocking_maze.new_obstacles.extend([i, 12] for i in np.arange(12,21))
+    blocking_maze.new_obstacles.extend([i, 13] for i in np.arange(12,21))
+    blocking_maze.new_obstacles.extend([i, 14] for i in np.arange(8,24))
+    blocking_maze.new_obstacles.extend([i, 15] for i in np.arange(8,24))
+    blocking_maze.new_obstacles.extend([i, j] for i in np.arange(7, 25) for j in np.arange(18,27))
+
 
     # step limit
     blocking_maze.max_steps = 3000
@@ -575,7 +595,86 @@ def check_path(q_values, maze):
     return True
 
 # Example 8.4, mazes with different resolution
-def example_8_4():
+def figure7():
+    # get the original 6 * 9 maze
+    original_maze = Maze()
+
+    # set up the parameters for each algorithm
+    params_dyna = DynaParams()
+    params_dyna.planning_steps = 5
+    params_dyna.alpha = 0.5
+    params_dyna.gamma = 0.95
+
+    params_prioritized = DynaParams()
+    params_prioritized.theta = 0.0001
+    params_prioritized.planning_steps = 5
+    params_prioritized.alpha = 0.5
+    params_prioritized.gamma = 0.95
+
+    params = [params_prioritized, params_dyna]
+
+    # set up models for planning
+    models = [PriorityModel, TrivialModel]
+    method_names = ['Largest 1st Dyna', 'Random Dyna','Focused Dyna']
+
+    # due to limitation of my machine, I can only perform experiments for 5 mazes
+    # assuming the 1st maze has w * h states, then k-th maze has w * h * k * k states
+    num_of_mazes = 14
+
+    # build all the mazes
+    mazes = [original_maze.extend_maze(i) for i in range(1, num_of_mazes + 1)]
+    methods = [prioritized_sweeping, dyna_q, dyna_h]
+
+    # My machine cannot afford too many runs...
+    runs = 10
+
+    # track the # of backups
+    backups = np.zeros((runs, 2, num_of_mazes))
+
+    for run in range(0, runs):
+        for i in range(0, len(method_names)):
+            for mazeIndex, maze in zip(range(0, len(mazes)), mazes):
+                print('run %d, %s, maze size %d' % (run, method_names[i], maze.WORLD_HEIGHT * maze.WORLD_WIDTH))
+
+                # initialize the state action values
+                q_value = np.zeros(maze.q_size)
+
+                # track steps / backups for each episode
+                steps = []
+
+                # generate the model
+                model = models[i]()
+
+                # play for an episode
+                while True:
+                    steps.append(methods[i](q_value, model, maze, params[i]))
+
+                    # print best actions w.r.t. current state-action values
+                    # printActions(currentStateActionValues, maze)
+                    # check whether the (relaxed) optimal path is found
+                    if check_path(q_value, maze):
+                        break
+                print("steps", min(steps))
+
+                # update the total steps / backups for this maze
+                backups[run, i, mazeIndex] = np.sum(steps)
+
+    backups = backups.mean(axis=0)
+
+    # Dyna-Q performs several backups per step
+    backups[1, :] *= params_dyna.planning_steps + 1
+
+    for i in range(0, len(method_names)):
+        plt.plot(np.arange(1, num_of_mazes + 1), backups[i, :], label=method_names[i])
+    plt.xlabel('maze resolution factor')
+    plt.ylabel('backups until optimal solution')
+    plt.yscale('log')
+    plt.legend()
+
+    plt.savefig('figure7.png')
+    plt.close()
+
+def figure8():
     # get the original 6 * 9 maze
     original_maze = Maze()
 
@@ -602,11 +701,11 @@ def example_8_4():
     num_of_mazes = 1
 
     # build all the mazes
-    mazes = [original_maze.extend_maze(i) for i in range(1, num_of_mazes + 1)]
+    mazes = [original_maze.extend_maze(i*4) for i in range(1, num_of_mazes + 1)]
     methods = [prioritized_sweeping, dyna_q]
 
     # My machine cannot afford too many runs...
-    runs = 5
+    runs = 10
 
     # track the # of backups
     backups = np.zeros((runs, 2, num_of_mazes))
@@ -631,10 +730,10 @@ def example_8_4():
 
                     # print best actions w.r.t. current state-action values
                     # printActions(currentStateActionValues, maze)
-                    print("steps",steps[-1])
                     # check whether the (relaxed) optimal path is found
                     if check_path(q_value, maze):
                         break
+                print("steps", min(steps))
 
                 # update the total steps / backups for this maze
                 backups[run, i, mazeIndex] = np.sum(steps)
@@ -643,21 +742,20 @@ def example_8_4():
 
     # Dyna-Q performs several backups per step
     backups[1, :] *= params_dyna.planning_steps + 1
-
+    print("backuos 0  ",backups[1:0])
+    print("backups 1 ",backups[1:0])
     for i in range(0, len(method_names)):
-        plt.plot(np.arange(1, num_of_mazes + 1), backups[i, :], label=method_names[i])
-    plt.xlabel('maze resolution factor')
-    plt.ylabel('backups until optimal solution')
-    plt.yscale('log')
+        plt.plot(backups[i, :],'o--', label=method_names[i])
+    plt.xlabel('Backups')
+    plt.ylabel('States to Goal')
     plt.legend()
 
-    plt.savefig('../images/example_8_4.png')
+    plt.savefig('figure8.png')
     plt.close()
 
 
+
 if __name__ == '__main__':
-    #figure_8_2()
-    #figure_8_4()
-    #figure_8_5()
-    example_8_4()
+    figure7()
+    figure8()
 
