@@ -779,7 +779,7 @@ def figure8():
     runs = 100
     episodes = 100
     planning_steps = [0]
-    steps = np.zeros((len(planning_steps), episodes))
+    steps = []
 
     params = [params_prioritized,dyna_params]
 
@@ -805,17 +805,11 @@ def figure8():
 
             # generate an instance of Dyna-Q model
             model = TrivialModel()
-            for ep in range(episodes):
+            while True : #for ep in range(episodes):
                 # print('run:', run, 'planning step:', planning_step, 'episode:', ep)
-                steps[index, ep] += dyna_q(q_value, model, mazes[0], dyna_params)
+                steps.append(dyna_q(q_value, model, mazes[0], dyna_params))
                 if check_path(q_value, mazes[0]):
                     break
-
-    # averaging over runs
-    steps /= runs
-
-    # get the original 6 * 9 maze
-
 
     for run in tqdm(range(0, runs)):
         for i in range(0, len(method_names)):
@@ -845,16 +839,17 @@ def figure8():
                 # update the total steps / backups for this maze
                 backups[method_names[i]] = stepss
 
-                backups = backups.mean(axis=0)
-
     # Dyna-Q performs several backups per step
     for i in method_names:
-        #backups[i] *= dyna_params.planning_steps + 1
-        plt.plot(backups[i], label=i)
+        backups[i] *= dyna_params.planning_steps + 1
+        plt.plot(sorted(backups[i], reverse=True), label=i)
+        print(len(backups[i]))
     for i in range(len(planning_steps)):
-        plt.plot(steps[i, :], label='%d planning steps' % (planning_steps[i]))
+        plt.plot(sorted(steps, reverse=True), label='Random Dyna')
     plt.xlabel('Backups')
     plt.ylabel('Steps to Goal')
+    #plt.ylim((0,10000))
+    plt.xscale('log')
     plt.legend()
 
     plt.savefig('figure8.png')
