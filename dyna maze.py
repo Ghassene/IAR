@@ -1,19 +1,15 @@
 #######################################################################
 # Copyright (C)                                                       #
-# 2016-2018 Shangtong Zhang(zhangshangtong.cpp@gmail.com)             #
-# 2016 Kenta Shimada(hyperkentakun@gmail.com)                         #
-# Permission given to modify the code as long as you keep this        #
-# declaration at the top                                              #
+# 2016-2018 Shangtong Zhang                                           #
 #######################################################################
 
 import numpy as np
-import matplotlib
-# matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import heapq
 from copy import deepcopy
 from scipy.spatial import distance
+from collections import defaultdict
 
 
 class PriorityQueue:
@@ -205,7 +201,7 @@ class DynaParams:
         self.runs = 10
 
         # algorithm names
-        self.methods = ['Dyna-Q', 'Dyna-Q+']
+        self.methods = ['Dyna-Q']
 
         # threshold for priority queue
         self.theta = 0
@@ -246,7 +242,7 @@ class TrivialModel:
         next_state = deepcopy(next_state)
         return list(state), action, list(next_state), reward
 
-
+# Heuristic model for planning in Dyna-H
 class HeuristicModel:
     # @rand: an instance of np.random.RandomState for sampling
     def __init__(self, rand=np.random):
@@ -272,12 +268,13 @@ class HeuristicModel:
         next_state = deepcopy(next_state)
         return list(state), action, list(next_state), reward
 
+    #to verif if an action still in model
     def verif(self, state, action):
         if tuple(state) not in self.model.keys() and action not in self.model[state]:
             return True
         return False
 
-
+#calculate the eucleudean distance between current state and goal state
 def H(state, action, maze):
     next, reward = maze.step(state, action)
     return distance.euclidean(next, maze.GOAL_STATES[0])
@@ -366,8 +363,8 @@ def dyna_q(q_value, model, maze, dyna_params):
 
         # Q-Learning update
         q_value[state[0], state[1], action] += dyna_params.alpha * (
-                    reward + dyna_params.gamma * np.max(q_value[next_state[0], next_state[1], :]) - q_value[
-                state[0], state[1], action])
+                reward + dyna_params.gamma * np.max(q_value[next_state[0], next_state[1], :]) - q_value[
+            state[0], state[1], action])
 
         # feed the model with experience
         model.feed(state, action, next_state, reward)
@@ -376,8 +373,8 @@ def dyna_q(q_value, model, maze, dyna_params):
         for t in range(0, dyna_params.planning_steps):
             state_, action_, next_state_, reward_ = model.sample()
             q_value[state_[0], state_[1], action_] += dyna_params.alpha * (
-                        reward_ + dyna_params.gamma * np.max(q_value[next_state_[0], next_state_[1], :]) -
-                        q_value[state_[0], state_[1], action_])
+                    reward_ + dyna_params.gamma * np.max(q_value[next_state_[0], next_state_[1], :]) -
+                    q_value[state_[0], state_[1], action_])
         state = next_state
 
         # check whether it has exceeded the step limit
@@ -386,7 +383,11 @@ def dyna_q(q_value, model, maze, dyna_params):
 
     return steps
 
-
+# play for an episode for Dyna-H algorithm
+# @q_value: state action pair values, will be updated
+# @model: model instance for planning
+# @maze: a maze instance containing all information about the environment
+# @dyna_params: several params for the algorithm
 def dyna_h(q_value, model, maze, dyna_params):
     state = maze.START_STATE
     steps = 0
@@ -402,8 +403,8 @@ def dyna_h(q_value, model, maze, dyna_params):
 
         # Q-Learning update
         q_value[state[0], state[1], action] += dyna_params.alpha * (
-                    reward + dyna_params.gamma * np.max(q_value[next_state[0], next_state[1], :]) - q_value[
-                state[0], state[1], action])
+                reward + dyna_params.gamma * np.max(q_value[next_state[0], next_state[1], :]) - q_value[
+            state[0], state[1], action])
 
         # feed the model with experience
         model.feed(state, action, next_state, reward)
@@ -418,8 +419,8 @@ def dyna_h(q_value, model, maze, dyna_params):
                 state_, action_, next_state_, reward_ = model.sample()
 
             q_value[state_[0], state_[1], action_] += dyna_params.alpha * (
-                        reward_ + dyna_params.gamma * np.max(q_value[next_state_[0], next_state_[1], :]) - q_value[
-                    state_[0], state_[1], action_])
+                    reward_ + dyna_params.gamma * np.max(q_value[next_state_[0], next_state_[1], :]) - q_value[
+                state_[0], state_[1], action_])
         state = next_state
 
         # check whether it has exceeded the step limit
@@ -455,7 +456,6 @@ def prioritized_sweeping(q_value, model, maze, dyna_params):
 
         # feed the model with experience
         model.feed(state, action, next_state, reward)
-
         # get the priority for current state action pair
         priority = np.abs(reward + dyna_params.gamma * np.max(q_value[next_state[0], next_state[1], :]) -
                           q_value[state[0], state[1], action])
@@ -493,178 +493,142 @@ def prioritized_sweeping(q_value, model, maze, dyna_params):
     return backups
 
 
-# Figure 8.2, DynaMaze, use 10 runs instead of 30 runs
-def figure_8_2():
-    # set up an instance for DynaMaze
-    dyna_maze = Maze()
-    dyna_params = DynaParams()
+# Figure 9, 30*30 Maze
+class Maze_figure9():
+    def __init__(self):
+        # set up a blocking maze instance
+        self.WORLD_HEIGHT = 30
+        self.WORLD_WIDTH = 30
+        self.START_STATE = [0, 16]
+        self.GOAL_STATES = [[0, 28], [0, 29]]
+        # all possible actions
+        self.ACTION_UP = 0
+        self.ACTION_DOWN = 1
+        self.ACTION_LEFT = 2
+        self.ACTION_RIGHT = 3
+        self.actions = [self.ACTION_UP, self.ACTION_DOWN, self.ACTION_LEFT, self.ACTION_RIGHT]
+        # new obstalces will block the optimal path
+        self.obstacles = [[3, 2], [3, 3], [4, 2], [11, 5], [12, 5], [13, 5], [16, 27]]
+        self.obstacles.extend([25, i] for i in np.arange(17))
+        self.obstacles.extend([26, i] for i in np.arange(17))
+        self.obstacles.extend([27, i] for i in np.arange(17))
+        self.obstacles.extend([i, 12] for i in np.arange(12, 21))
+        self.obstacles.extend([i, 13] for i in np.arange(12, 21))
+        self.obstacles.extend([i, 14] for i in np.arange(8, 24))
+        self.obstacles.extend([i, 15] for i in np.arange(8, 24))
+        self.obstacles.extend([i, j] for i in np.arange(7, 25) for j in np.arange(18, 27))
 
-    runs = 10
-    episodes = 50
-    planning_steps = [0, 5, 50]
-    steps = np.zeros((len(planning_steps), episodes))
+        # step limit
+        self.old_obstacles = None
+        self.new_obstacles = None
 
-    for run in tqdm(range(runs)):
-        for index, planning_step in zip(range(len(planning_steps)), planning_steps):
-            dyna_params.planning_steps = planning_step
-            q_value = np.zeros(dyna_maze.q_size)
+        # time to change obstacles
+        self.obstacle_switch_time = None
 
-            # generate an instance of Dyna-Q model
-            model = TrivialModel()
-            for ep in range(episodes):
-                # print('run:', run, 'planning step:', planning_step, 'episode:', ep)
-                steps[index, ep] += dyna_q(q_value, model, dyna_maze, dyna_params)
+        # initial state action pair values
+        # self.stateActionValues = np.zeros((self.WORLD_HEIGHT, self.WORLD_WIDTH, len(self.actions)))
 
-    # averaging over runs
-    steps /= runs
+        # the size of q value
+        self.q_size = (self.WORLD_HEIGHT, self.WORLD_WIDTH, len(self.actions))
 
-    for i in range(len(planning_steps)):
-        plt.plot(steps[i, :], label='%d planning steps' % (planning_steps[i]))
-    plt.xlabel('episodes')
-    plt.ylabel('steps per episode')
-    plt.legend()
+        # max steps
+        self.max_steps = float('inf')
 
-    plt.savefig('figure_8_2.png')
-    plt.close()
+        # track the resolution for this maze
+        self.resolution = 1
 
+        # extend a state to a higher resolution maze
+        # @state: state in lower resoultion maze
+        # @factor: extension factor, one state will become factor^2 states after extension
 
-# wrapper function for changing maze
-# @maze: a maze instance
-# @dynaParams: several parameters for dyna algorithms
-def changing_maze(maze, dyna_params):
-    # set up max steps
-    max_steps = maze.max_steps
+    def extend_state(self, state, factor):
+        new_state = [state[0] * factor, state[1] * factor]
+        new_states = []
+        for i in range(0, factor):
+            for j in range(0, factor):
+                new_states.append([new_state[0] + i, new_state[1] + j])
+        return new_states
 
-    # track the cumulative rewards
-    rewards = np.zeros((dyna_params.runs, 2, max_steps))
+        # extend a state into higher resolution
+        # one state in original maze will become @factor^2 states in @return new maze
 
-    for run in tqdm(range(dyna_params.runs)):
-        # set up models
-        models = [TrivialModel(), TimeModel(maze, time_weight=dyna_params.time_weight)]
+    def extend_maze(self, factor):
+        new_maze = Maze()
+        new_maze.WORLD_WIDTH = self.WORLD_WIDTH * factor
+        new_maze.WORLD_HEIGHT = self.WORLD_HEIGHT * factor
+        new_maze.START_STATE = [self.START_STATE[0] * factor, self.START_STATE[1] * factor]
+        new_maze.GOAL_STATES = self.extend_state(self.GOAL_STATES[0], factor)
+        new_maze.obstacles = []
+        for state in self.obstacles:
+            new_maze.obstacles.extend(self.extend_state(state, factor))
+        new_maze.q_size = (new_maze.WORLD_HEIGHT, new_maze.WORLD_WIDTH, len(new_maze.actions))
+        # new_maze.stateActionValues = np.zeros((new_maze.WORLD_HEIGHT, new_maze.WORLD_WIDTH, len(new_maze.actions)))
+        new_maze.resolution = factor
+        return new_maze
 
-        # initialize state action values
-        q_values = [np.zeros(maze.q_size), np.zeros(maze.q_size)]
+        # take @action in @state
+        # @return: [new state, reward]
 
-        for i in range(len(dyna_params.methods)):
-            # print('run:', run, dyna_params.methods[i])
+    def step(self, state, action):
+        x, y = state
+        if action == self.ACTION_UP:
+            x = max(x - 1, 0)
+        elif action == self.ACTION_DOWN:
+            x = min(x + 1, self.WORLD_HEIGHT - 1)
+        elif action == self.ACTION_LEFT:
+            y = max(y - 1, 0)
+        elif action == self.ACTION_RIGHT:
+            y = min(y + 1, self.WORLD_WIDTH - 1)
+        if [x, y] in self.obstacles:
+            x, y = state
+        if [x, y] in self.GOAL_STATES:
+            reward = 1.0
+        else:
+            reward = 0.0
+        return [x, y], reward
 
-            # set old obstacles for the maze
-            maze.obstacles = maze.old_obstacles
+    def stepSt(self, state, action):
+        x, y = state
+        nb = np.random.rand()
+        if action == self.ACTION_UP:
+            if (nb < 2 / 3):
+                x = max(x - 1, 0)
+            elif (nb < 5 / 6):
+                y = max(y - 1, 0)
+            else:
+                y = min(y + 1, self.WORLD_WIDTH - 1)
 
-            steps = 0
-            last_steps = steps
-            while steps < max_steps:
-                # play for an episode
-                steps += dyna_q(q_values[i], models[i], maze, dyna_params)
+        elif action == self.ACTION_DOWN:
+            if (nb < 2 / 3):
+                x = min(x + 1, self.WORLD_HEIGHT - 1)
+            elif (nb < 5 / 6):
+                y = max(y - 1, 0)
+            else:
+                y = min(y + 1, self.WORLD_WIDTH - 1)
 
-                # update cumulative rewards
-                rewards[run, i, last_steps: steps] = rewards[run, i, last_steps]
-                rewards[run, i, min(steps, max_steps - 1)] = rewards[run, i, last_steps] + 1
-                last_steps = steps
+        elif action == self.ACTION_LEFT:
+            if (nb < 2 / 3):
+                y = max(y - 1, 0)
+            elif (nb < 5 / 6):
+                x = max(x - 1, 0)
+            else:
+                x = min(x + 1, self.WORLD_HEIGHT - 1)
 
-                if steps > maze.obstacle_switch_time:
-                    # change the obstacles
-                    maze.obstacles = maze.new_obstacles
+        elif action == self.ACTION_RIGHT:
+            if (nb < 2 / 3):
+                y = min(y + 1, self.WORLD_WIDTH - 1)
+            elif (nb < 5 / 6):
+                x = max(x - 1, 0)
+            else:
+                x = min(x + 1, self.WORLD_HEIGHT - 1)
 
-    # averaging over runs
-    rewards = rewards.mean(axis=0)
-
-    return rewards
-
-
-# Figure 8.4, BlockingMaze
-def Maze_figure9():
-    # set up a blocking maze instance
-    blocking_maze = Maze()
-    blocking_maze.WORLD_HEIGHT = 30
-    blocking_maze.WORLD_WIDTH = 30
-    blocking_maze.START_STATE = [0, 16]
-    blocking_maze.GOAL_STATES = [[0, 28], [0, 29]]
-    blocking_maze.old_obstacles = [[1, 2], [2, 2], [3, 2], [0, 7], [1, 7], [2, 7], [4, 5]]
-
-    # new obstalces will block the optimal path
-    blocking_maze.new_obstacles = [[3, 2], [3, 3], [4, 2],
-                                   [11, 5], [12, 5], [13, 5], [16, 27]]
-    blocking_maze.new_obstacles.extend([25, i] for i in np.arange(17))
-    blocking_maze.new_obstacles.extend([26, i] for i in np.arange(17))
-    blocking_maze.new_obstacles.extend([27, i] for i in np.arange(17))
-    blocking_maze.new_obstacles.extend([i, 12] for i in np.arange(12, 21))
-    blocking_maze.new_obstacles.extend([i, 13] for i in np.arange(12, 21))
-    blocking_maze.new_obstacles.extend([i, 14] for i in np.arange(8, 24))
-    blocking_maze.new_obstacles.extend([i, 15] for i in np.arange(8, 24))
-    blocking_maze.new_obstacles.extend([i, j] for i in np.arange(7, 25) for j in np.arange(18, 27))
-
-    # step limit
-    blocking_maze.max_steps = 3000
-
-    # obstacles will change after 1000 steps
-    # the exact step for changing will be different
-    # However given that 1000 steps is long enough for both algorithms to converge,
-    # the difference is guaranteed to be very small
-    blocking_maze.obstacle_switch_time = 1000
-
-    # set up parameters
-    dyna_params = DynaParams()
-    dyna_params.alpha = 1.0
-    dyna_params.planning_steps = 10
-    dyna_params.runs = 20
-
-    # kappa must be small, as the reward for getting the goal is only 1
-    dyna_params.time_weight = 1e-4
-
-    # play
-    rewards = changing_maze(blocking_maze, dyna_params)
-
-    for i in range(len(dyna_params.methods)):
-        plt.plot(rewards[i, :], label=dyna_params.methods[i])
-    plt.xlabel('time steps')
-    plt.ylabel('cumulative reward')
-    plt.legend()
-
-    plt.savefig('figure_8_4.png')
-    plt.close()
-
-
-# Figure 8.5, ShortcutMaze
-def figure_8_5():
-    # set up a shortcut maze instance
-    shortcut_maze = Maze()
-    shortcut_maze.START_STATE = [5, 3]
-    shortcut_maze.GOAL_STATES = [[0, 8]]
-    shortcut_maze.old_obstacles = [[3, i] for i in range(1, 9)]
-
-    # new obstacles will have a shorter path
-    shortcut_maze.new_obstacles = [[3, i] for i in range(1, 8)]
-
-    # step limit
-    shortcut_maze.max_steps = 6000
-
-    # obstacles will change after 3000 steps
-    # the exact step for changing will be different
-    # However given that 3000 steps is long enough for both algorithms to converge,
-    # the difference is guaranteed to be very small
-    shortcut_maze.obstacle_switch_time = 3000
-
-    # set up parameters
-    dyna_params = DynaParams()
-
-    # 50-step planning
-    dyna_params.planning_steps = 50
-    dyna_params.runs = 5
-    dyna_params.time_weight = 1e-3
-    dyna_params.alpha = 1.0
-
-    # play
-    rewards = changing_maze(shortcut_maze, dyna_params)
-
-    for i in range(len(dyna_params.methods)):
-        plt.plot(rewards[i, :], label=dyna_params.methods[i])
-    plt.xlabel('time steps')
-    plt.ylabel('cumulative reward')
-    plt.legend()
-
-    plt.savefig('figure_8_5.png')
-    plt.close()
+        if [x, y] in self.obstacles:
+            x, y = state
+        if [x, y] in self.GOAL_STATES:
+            reward = 1.0
+        else:
+            reward = 0.0
+        return [x, y], reward
 
 
 # Check whether state-action values are already optimal
@@ -683,8 +647,7 @@ def check_path(q_values, maze):
             return False
     return True
 
-
-# Example 8.4, mazes with different resolution
+# figure 7, mazes with different resolution
 def figure7():
     # get the original 6 * 9 maze
     original_maze = Maze()
@@ -710,21 +673,20 @@ def figure7():
     # due to limitation of my machine, I can only perform experiments for 5 mazes
     # assuming the 1st maze has w * h states, then k-th maze has w * h * k * k states
     num_of_mazes = 8
-
     # build all the mazes
     mazes = [original_maze.extend_maze(i) for i in range(1, num_of_mazes + 1)]
     methods = [prioritized_sweeping, dyna_q, dyna_h]
 
     # My machine cannot afford too many runs...
-    runs = 10
+    runs = 100
 
     # track the # of backups
     backups = np.zeros((runs, 3, num_of_mazes))
 
-    for run in range(0, runs):
+    for run in tqdm(range(0, runs)):
         for i in range(0, len(method_names)):
             for mazeIndex, maze in zip(range(0, len(mazes)), mazes):
-                print('run %d, %s, maze size %d' % (run, method_names[i], maze.WORLD_HEIGHT * (maze.WORLD_WIDTH - 1)))
+                # print('run %d, %s, maze size %d' % (run, method_names[i], maze.WORLD_HEIGHT * (maze.WORLD_WIDTH - 1)))
 
                 # initialize the state action values
                 q_value = np.zeros(maze.q_size)
@@ -734,7 +696,6 @@ def figure7():
 
                 # generate the model
                 model = models[i]()
-
                 # play for an episode
                 while True:
                     steps.append(methods[i](q_value, model, maze, params[i]))
@@ -744,7 +705,6 @@ def figure7():
                     # check whether the (relaxed) optimal path is found
                     if check_path(q_value, maze):
                         break
-                print("steps", min(steps))
 
                 # update the total steps / backups for this maze
                 backups[run, i, mazeIndex] = np.sum(steps)
@@ -764,7 +724,7 @@ def figure7():
     plt.savefig('figure7.png')
     plt.close()
 
-
+# figure 8, performance of maze figure 6
 def figure8():
     original_maze = Maze()
     params_prioritized = DynaParams()
@@ -772,20 +732,22 @@ def figure8():
     params_prioritized.planning_steps = 5
     params_prioritized.alpha = 0.5
     params_prioritized.gamma = 0.95
+
+    params_dyna = DynaParams()
+    params_dyna.planning_steps = 5
+    params_dyna.alpha = 0.5
+    params_dyna.gamma = 0.95
     # track the # of backups
-    backups = {}
-    dyna_params = DynaParams()
+    backups = defaultdict(list)
 
     runs = 100
     episodes = 100
-    planning_steps = [0]
     steps = []
-
-    params = [params_prioritized,dyna_params]
+    params = [params_prioritized, params_dyna]
 
     # set up models for planning
-    models = [PriorityModel,TrivialModel]
-    method_names = ['Largest 1st Dyna','Focused Dyna']
+    models = [PriorityModel, TrivialModel]
+    method_names = ['Largest 1st Dyna', 'Random Dyna']
 
     # due to limitation of my machine, I can only perform experiments for 5 mazes
     # assuming the 1st maze has w * h states, then k-th maze has w * h * k * k states
@@ -793,23 +755,182 @@ def figure8():
 
     # build all the mazes
     mazes = [original_maze.extend_maze(i * 4) for i in range(1, num_of_mazes + 1)]
-    methods = [prioritized_sweeping,dyna_h]
-
-
-
+    methods = [prioritized_sweeping, dyna_q]
 
     for run in tqdm(range(runs)):
-        for index, planning_step in zip(range(len(planning_steps)), planning_steps):
-            dyna_params.planning_steps = planning_step
+        for planning_step in range(params_dyna.planning_steps):
+            params_dyna.planning_steps = planning_step
             q_value = np.zeros(mazes[0].q_size)
 
-            # generate an instance of Dyna-Q model
-            model = TrivialModel()
-            while True : #for ep in range(episodes):
+            # generate an instance of Dyna-H model
+            model = HeuristicModel()
+            while True:  # for ep in range(episodes):
                 # print('run:', run, 'planning step:', planning_step, 'episode:', ep)
-                steps.append(dyna_q(q_value, model, mazes[0], dyna_params))
+                steps.append(dyna_h(q_value, model, mazes[0], params_dyna))
                 if check_path(q_value, mazes[0]):
                     break
+
+    for run in tqdm(range(0, runs)):
+        for i in range(0, len(method_names)):
+            for mazeIndex, maze in zip(range(0, len(mazes)), mazes):
+                # print('run %d, %s, maze size %d' % (run, method_names[i], maze.WORLD_HEIGHT * maze.WORLD_WIDTH))
+
+                # initialize the state action values
+                q_value = np.zeros(maze.q_size)
+
+                # track steps / backups for each episode
+                stepss = []
+
+                # generate the model
+                model = models[i]()
+
+                # play for an episode
+                while True:
+                    stepss.append(methods[i](q_value, model, maze, params[i]))
+
+                    # print best actions w.r.t. current state-action values
+                    # printActions(currentStateActionValues, maze)
+                    # check whether the (relaxed) optimal path is found
+                    if check_path(q_value, maze):
+                        break
+                # print("steps", steps)
+
+                # update the total steps / backups for this maze
+                backups[method_names[i]].extend(stepss)
+
+    # Dyna-Q performs several backups per step
+    for i in method_names:
+        # backups[i] *= dyna_params.planning_steps + 1
+        # print(backups[i])
+        plt.plot(sorted(backups[i], reverse=True), label=i)
+
+    plt.plot(sorted(steps, reverse=True), label='Focused Dyna')
+    plt.xlabel('Backups')
+    plt.ylabel('Steps to Goal')
+    plt.ylim((0, 10000))
+    plt.xscale('log')
+    plt.legend()
+
+    plt.savefig('figure8.png')
+    plt.close()
+
+
+def figure10():
+    original_maze = Maze_figure9()
+    params_prioritized = DynaParams()
+    params_prioritized.theta = 0.0001
+    params_prioritized.planning_steps = 5
+    params_prioritized.alpha = 0.5
+    params_prioritized.gamma = 0.95
+
+    params_dyna = DynaParams()
+    params_dyna.planning_steps = 5
+    params_dyna.alpha = 0.5
+    params_dyna.gamma = 0.95
+    # track the # of backups
+    backups = defaultdict(list)
+
+    runs = 100
+    episodes = 100
+    steps = []
+    params = [params_prioritized, params_dyna]
+
+    # set up models for planning
+    models = [PriorityModel, TrivialModel]
+    method_names = ['Largest 1st Dyna', 'Random Dyna']
+
+    # due to limitation of my machine, I can only perform experiments for 5 mazes
+    # assuming the 1st maze has w * h states, then k-th maze has w * h * k * k states
+    num_of_mazes = 1
+
+    # build all the mazes
+    methods = [prioritized_sweeping, dyna_q]
+
+    for run in tqdm(range(runs)):
+        for planning_step in range(params_dyna.planning_steps):
+            params_dyna.planning_steps = planning_step
+            q_value = np.zeros(original_maze.q_size)
+
+            # generate an instance of Dyna-H model
+            model = HeuristicModel()
+            while True:  # for ep in range(episodes):
+                # print('run:', run, 'planning step:', planning_step, 'episode:', ep)
+                steps.append(dyna_h(q_value, model, original_maze, params_dyna))
+                if check_path(q_value, original_maze):
+                    break
+
+    for run in tqdm(range(0, runs)):
+        for i in range(0, len(method_names)):
+            # print('run %d, %s, maze size %d' % (run, method_names[i], maze.WORLD_HEIGHT * maze.WORLD_WIDTH))
+
+            # initialize the state action values
+            q_value = np.zeros(original_maze.q_size)
+
+            # track steps / backups for each episode
+            stepss = []
+
+            # generate the model
+            model = models[i]()
+
+            # play for an episode
+            while True:
+                stepss.append(methods[i](q_value, model, original_maze, params[i]))
+
+                # print best actions w.r.t. current state-action values
+                # printActions(currentStateActionValues, maze)
+                # check whether the (relaxed) optimal path is found
+                if check_path(q_value, original_maze):
+                    break
+            # print("steps", steps)
+
+            # update the total steps / backups for this maze
+            backups[method_names[i]].extend(stepss)
+
+    # Dyna-Q performs several backups per step
+    for i in method_names:
+        plt.plot(sorted(backups[i], reverse=True), label=i)
+
+    plt.plot(sorted(steps, reverse=True), label='Focused Dyna')
+    plt.xlabel('Backups')
+    plt.ylabel('Steps to Goal')
+    plt.ylim((0, 10000))
+    plt.xscale('log')
+    plt.legend()
+
+    plt.savefig('figure10.png')
+    plt.close()
+
+
+def figure11():
+    original_maze = Maze()
+    params_prioritized = DynaParams()
+    params_prioritized.theta = 0.0001
+    params_prioritized.planning_steps = 5
+    params_prioritized.alpha = 0.5
+    params_prioritized.gamma = 0.95
+
+    params_dyna = DynaParams()
+    params_dyna.planning_steps = 5
+    params_dyna.alpha = 0.5
+    params_dyna.gamma = 0.95
+    # track the # of backups
+    backups = defaultdict(list)
+
+    runs = 10
+
+    params = [params_dyna,params_dyna]
+
+    # set up models for planning
+    models = [HeuristicModel,TrivialModel]
+    method_names = ['Focused Dyna','Random Dyna']
+
+    # due to limitation of my machine, I can only perform experiments for 5 mazes
+    # assuming the 1st maze has w * h states, then k-th maze has w * h * k * k states
+    num_of_mazes = 1
+
+    # build all the mazes
+    mazes = [original_maze.extend_maze(i*2) for i in range(1, num_of_mazes + 1)]
+    methods = [dyna_h,dyna_q]
 
     for run in tqdm(range(0, runs)):
         for i in range(0, len(method_names)):
@@ -834,28 +955,210 @@ def figure8():
                     # check whether the (relaxed) optimal path is found
                     if check_path(q_value, maze):
                         break
-                # print("steps", steps)
 
                 # update the total steps / backups for this maze
-                backups[method_names[i]] = stepss
+                backups[method_names[i]].extend(stepss)
 
     # Dyna-Q performs several backups per step
     for i in method_names:
-        backups[i] *= dyna_params.planning_steps + 1
         plt.plot(sorted(backups[i], reverse=True), label=i)
-        print(len(backups[i]))
-    for i in range(len(planning_steps)):
-        plt.plot(sorted(steps, reverse=True), label='Random Dyna')
     plt.xlabel('Backups')
     plt.ylabel('Steps to Goal')
-    #plt.ylim((0,10000))
+    plt.ylim((0, 10000))
     plt.xscale('log')
     plt.legend()
 
-    plt.savefig('figure8.png')
+    plt.savefig('figure11.png')
     plt.close()
 
+#cette procédure teste les différents planings_steps
+#param : name (nom du l'algo)
+def parametrePlSt(name):
+    # set up an instance for DynaMaze
+    dyna_maze = Maze()
+    dyna_params = DynaParams()
+
+    runs = 10
+    episodes = 50
+    planning_steps = [0, 5, 10, 50]
+    steps = np.zeros((len(planning_steps), episodes))
+
+    # set up the parameters for each algorithm
+    params_dyna = DynaParams()
+    params_dyna.alpha = 0.1
+    params_dyna.gamma = 0.95
+
+    params_prioritized = DynaParams()
+    params_prioritized.theta = 0.0001
+    params_prioritized.alpha = 0.5
+    params_prioritized.gamma = 0.95
+
+    params = [params_prioritized, params_dyna, params_dyna]
+
+    # set up models for planning
+    methods = {'Largest 1st Dyna':prioritized_sweeping, 'Random Dyna':dyna_q, 'Focused Dyna':dyna_h}
+
+    for run in tqdm(range(runs)):
+        for index, planning_step in zip(range(len(planning_steps)), planning_steps):
+            q_value = np.zeros(dyna_maze.q_size)
+
+            # generate an instance of Dyna-Q model
+            if (name == 'Largest 1st Dyna'):
+                params_prioritized.planning_steps = planning_step
+                model = PriorityModel()
+                for ep in range(episodes):
+                    # print('run:', run, 'planning step:', planning_step, 'episode:', ep)
+                    steps[index, ep] += methods[name](q_value, model, dyna_maze, params_prioritized)
+            elif(name == 'Random Dyna'):
+                params_dyna.planning_steps = planning_step
+                model = TrivialModel()
+                for ep in range(episodes):
+                    # print('run:', run, 'planning step:', planning_step, 'episode:', ep)
+                    steps[index, ep] += methods[name](q_value, model, dyna_maze, params_dyna)
+            else:
+                params_dyna.planning_steps = planning_step
+                model = HeuristicModel()
+                for ep in range(episodes):
+                    # print('run:', run, 'planning step:', planning_step, 'episode:', ep)
+                    steps[index, ep] += methods[name](q_value, model, dyna_maze, params_dyna)
+    # averaging over runs
+    steps /= runs
+
+    for i in range(len(planning_steps)):
+        plt.plot(steps[i, :], label='%d planning steps' % (planning_steps[i]))
+    plt.xlabel('episodes')
+    plt.ylabel('steps per episode')
+    plt.legend()
+
+    plt.savefig(name+'-parametrePlSt.png')
+    plt.close()
+
+#cette procédure teste les différents alpha
+#param : name (nom du l'algo)
+def parametreAlpha(name):
+    # set up an instance for DynaMaze
+    dyna_maze = Maze()
+    dyna_params = DynaParams()
+
+    runs = 10
+    episodes = 50
+    alphas = [0, 0.1, 0.5, 1]
+    steps = np.zeros((len(alphas), episodes))
+
+    # set up the parameters for each algorithm
+    params_dyna = DynaParams()
+    params_dyna.alpha = 0.1
+    params_dyna.gamma = 0.95
+
+    params_prioritized = DynaParams()
+    params_prioritized.theta = 0.0001
+    params_prioritized.alpha = 0.5
+    params_prioritized.gamma = 0.95
+
+    params = [params_prioritized, params_dyna, params_dyna]
+
+    # set up models for planning
+    methods = {'Largest 1st Dyna':prioritized_sweeping, 'Random Dyna':dyna_q, 'Focused Dyna':dyna_h}
+
+    for run in tqdm(range(runs)):
+        for index, alpha in zip(range(len(alphas)), alphas):
+            q_value = np.zeros(dyna_maze.q_size)
+
+            # generate an instance of Dyna-Q model
+            if (name == 'Largest 1st Dyna'):
+                params_prioritized.alpha = alpha
+                model = PriorityModel()
+                for ep in range(episodes):
+                    # print('run:', run, 'planning step:', planning_step, 'episode:', ep)
+                    steps[index, ep] += methods[name](q_value, model, dyna_maze, params_prioritized)
+            elif(name == 'Random Dyna'):
+                params_dyna.alpha = alpha
+                model = TrivialModel()
+                for ep in range(episodes):
+                    # print('run:', run, 'planning step:', planning_step, 'episode:', ep)
+                    steps[index, ep] += methods[name](q_value, model, dyna_maze, params_dyna)
+            else:
+                params_dyna.alpha = alpha
+                model = HeuristicModel()
+                for ep in range(episodes):
+                    # print('run:', run, 'planning step:', planning_step, 'episode:', ep)
+                    steps[index, ep] += methods[name](q_value, model, dyna_maze, params_dyna)
+    # averaging over runs
+    steps /= runs
+    for i in range(len(alphas)):
+        plt.plot(steps[i, :], label='%f alpha' % (alphas[i]))
+    plt.xlabel('episodes')
+    plt.ylabel('steps per episode')
+    plt.legend()
+
+    plt.savefig(name+'-parametreAlpha.png')
+    plt.close()
+
+#cette procédure teste les différents gamma
+#param : name (nom du l'algo)
+def parametreGamma(name):
+    # set up an instance for DynaMaze
+    dyna_maze = Maze()
+    runs = 10
+    episodes = 10
+    gammas = [0.05, 0.15, 0.5,0.95, 1]
+    steps = np.zeros((len(gammas), episodes))
+
+    # set up the parameters for each algorithm
+    params_dyna = DynaParams()
+    params_dyna.alpha = 0.1
+    params_dyna.gamma = 0.95
+
+    params_prioritized = DynaParams()
+    params_prioritized.theta = 0.0001
+    params_prioritized.alpha = 0.5
+    params_prioritized.gamma = 0.95
+
+    params = [params_prioritized, params_dyna, params_dyna]
+
+    # set up models for planning
+    methods = {'Largest 1st Dyna':prioritized_sweeping, 'Random Dyna':dyna_q, 'Focused Dyna':dyna_h}
+
+    for run in tqdm(range(runs)):
+        for index, gamma in zip(range(len(gammas)), gammas):
+            q_value = np.zeros(dyna_maze.q_size)
+
+            # generate an instance of Dyna-Q model
+            if (name == 'Largest 1st Dyna'):
+                params_prioritized.gamma = gamma
+                model = PriorityModel()
+                for ep in range(episodes):
+                    # print('run:', run, 'planning step:', planning_step, 'episode:', ep)
+                    steps[index, ep] += methods[name](q_value, model, dyna_maze, params_prioritized)
+            elif(name == 'Random Dyna'):
+                params_dyna.gamma = gamma
+                model = TrivialModel()
+                for ep in range(episodes):
+                    # print('run:', run, 'planning step:', planning_step, 'episode:', ep)
+                    steps[index, ep] += methods[name](q_value, model, dyna_maze, params_dyna)
+            else:
+                params_dyna.gamma = gamma
+                model = HeuristicModel()
+                for ep in range(episodes):
+                    # print('run:', run, 'planning step:', planning_step, 'episode:', ep)
+                    steps[index, ep] += methods[name](q_value, model, dyna_maze, params_dyna)
+    # averaging over runs
+    steps /= runs
+
+    for i in range(len(gammas)):
+        plt.plot(steps[i, :], label='%f gamma' % (gammas[i]))
+    plt.xlabel('episodes')
+    plt.ylabel('steps per episode')
+    plt.legend()
+
+    plt.savefig(name+'-parametreGamma.png')
+    plt.close()
 
 if __name__ == '__main__':
-    # figure7()
+    figure7()
     figure8()
+    figure10()
+    #figure11()  #pour la figure 11, la simulation doit avoir une grande mémoire pour l'éxécution qui peut durer plusieurs heures
+    parametrePlSt('Largest 1st Dyna')       #pour chacun des agorithmes il faut suivre cette notation : "Random Dyna" , "Focused Dyna"
+    parametreAlpha("Largest 1st Dyna")      #pour chacun des agorithmes il faut suivre cette notation : "Random Dyna" , "Focused Dyna"
+    parametreGamma("Largest 1st Dyna")      #pour chacun des agorithmes il faut suivre cette notation : "Random Dyna" , "Focused Dyna"
